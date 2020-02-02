@@ -49,7 +49,7 @@ class NBCPT(object):
         '''
         self.cpt = np.zeros((2, 2))
         # [ [P(Ai = 0 | C = 0), P(Ai = 0 | C = 1)], [P(Ai = 1 | C = 0), P(Ai = 1 | C = 1)] ]
-        self.index = A_i
+        self.idx = A_i
 
     def learn(self, A, C):
         '''
@@ -57,7 +57,7 @@ class NBCPT(object):
         to learn the parameters for this CPT
 
         Params:
-         - A: a (n,k) numpy array where each row is a sample of assignments 
+         - A: a (n,k) numpy array where each row is a sample of assignments
          - C: a (n,) numpy array where the elements correspond to the
            class labels of the rows in A
         Return:
@@ -65,20 +65,11 @@ class NBCPT(object):
 
         '''
         # MLE solution for CPD is #(Ai = ai, C = c) / #(C = c)
-        sample_size = C.size
-        count_c_1 = sum(C)
-        count_a_0_c_1 = 0
-        count_c_0 = sample_size - count_c_1
-        count_a_0_c_0 = 0
-        for i in range(sample_size):
-            if A[i, self.index] == 0 and C[i] == 0:
-                count_a_0_c_0 += 1
-            elif A[i, self.index] == 0 and C[i] == 1:
-                count_a_0_c_1 += 1
+        count = np.zeros((2, 2), dtype=int)
+        for i in range(C.size):
+            count[A[i, self.idx], C[i]] += 1
 
-        self.cpt[0, 0] = count_a_0_c_0 / count_c_0
-        self.cpt[0, 1] = count_a_0_c_1 / count_c_1
-        self.cpt[1, :] = 1 - self.cpt[0, :]
+        self.cpt = (count + alpha) / (np.sum(count, axis=0) + 2 * alpha)
 
     def get_cond_prob(self, entry, c):
         '''
@@ -93,7 +84,7 @@ class NBCPT(object):
          - p: a scalar, the conditional probability P(A_i=a_i | C=c)
 
         '''
-        return self.cpt[entry[self.index], c]
+        return self.cpt[entry[self.idx], c]
 
 
 class NBClassifier(object):
@@ -118,7 +109,7 @@ class NBClassifier(object):
         TODO: train your NB classifier with the specified data and class labels
         hint: learn the parameters for the required CPTs
         Params:
-          - A_train: a (n,k) numpy array where each row is a sample of assignments 
+          - A_train: a (n,k) numpy array where each row is a sample of assignments
           - C_train: a (n,)  numpy array where the elements correspond to
             the class labels of the rows in A
         Returns:
@@ -136,7 +127,7 @@ class NBClassifier(object):
         tuple for the given entry
 
         Params:
-          - entry: full assignment of variables 
+          - entry: full assignment of variables
             e.g. entry = np.array([0,1,1,...]) means variable A_0 = 0, A_1 = 1, A_2 = 1, etc.
         Returns:
          - c_pred: the predicted label, one of {0, 1}
@@ -192,13 +183,14 @@ class TANBCPT(object):
         the parameters for this CPT
 
         Params:
-         - A: a (n,k) numpy array where each row is a sample of assignments 
-         - C: a (n,)  numpy array where the elements correspond to the class 
+         - A: a (n,k) numpy array where each row is a sample of assignments
+         - C: a (n,)  numpy array where the elements correspond to the class
            labels of the rows in A
         Returns:
          - None
 
         '''
+
         if self.pa_idx != None:
             count = np.zeros((2, 2, 2), dtype=int)
             for i in range(C.size):
@@ -208,7 +200,7 @@ class TANBCPT(object):
             for i in range(C.size):
                 count[A[i, self.idx], C[i]] += 1
 
-        self.cpt = count / np.sum(count, axis=0)
+        self.cpt = (count + alpha) / (np.sum(count, axis=0) + 2 * alpha)
 
     def get_cond_prob(self, entry, c):
         '''
@@ -217,7 +209,7 @@ class TANBCPT(object):
         Note: in the expression above, the class C is also a parent of A_i!
 
         Params;
-            - entry: full assignment of variables 
+            - entry: full assignment of variables
               e.g. entry = np.array([0,1,1,...]) means variable A_0 = 0, A_1 = 1, A_2 = 1, etc.
             - c: the class
         Returns:
@@ -241,7 +233,7 @@ class TANBClassifier(NBClassifier):
         state of the trained classifier and populate them with a call to self._train
 
         Params:
-          - A_train: a (n,k) numpy array where each row is a sample of assignments 
+          - A_train: a (n,k) numpy array where each row is a sample of assignments
           - C_train: a (n,)  numpy array where the elements correspond to
             the class labels of the rows in A
 
@@ -268,7 +260,7 @@ class TANBClassifier(NBClassifier):
               each edge (a,b) => a -> b
 
         Params:
-          - A_train: a (n,k) numpy array where each row is a sample of assignments 
+          - A_train: a (n,k) numpy array where each row is a sample of assignments
           - C_train: a (n,)  numpy array where the elements correspond to
             the class labels of the rows in A
         Returns:
@@ -283,7 +275,7 @@ class TANBClassifier(NBClassifier):
         tuple for the given entry
 
         Params:
-         - entry: full assignment of variables 
+         - entry: full assignment of variables
             e.g. entry = np.array([0,1,1,...]) means variable A_0 = 0, A_1 = 1, A_2 = 1, etc.
         Returns:
          - c_pred: the predicted label in {0, 1}
@@ -291,7 +283,7 @@ class TANBClassifier(NBClassifier):
 
         NOTE: this class inherits from NBClassifier, and optionally, it is possible to
         write this method in NBClassifier, such that this implementation can
-        be removed. 
+        be removed.
 
         '''
         return super().classify(entry)
