@@ -180,7 +180,11 @@ class TANBCPT(object):
            the learned structure will have up to a single parent for each child)
 
         '''
-        raise NotImplementedError()
+        # [Ai, C, Ap]
+        self.cpt = np.zeros((2, 2, 2))
+
+        self.idx = A_i
+        self.pa_idx = A_p
 
     def learn(self, A, C):
         '''
@@ -195,7 +199,16 @@ class TANBCPT(object):
          - None
 
         '''
-        raise NotImplementedError()
+        if self.pa_idx != None:
+            count = np.zeros((2, 2, 2), dtype=int)
+            for i in range(C.size):
+                count[A[i, self.idx], C[i], A[i, self.pa_idx]] += 1
+        else:
+            count = np.zeros((2, 2), dtype=int)
+            for i in range(C.size):
+                count[A[i, self.idx], C[i]] += 1
+
+        self.cpt = count / np.sum(count, axis=0)
 
     def get_cond_prob(self, entry, c):
         '''
@@ -211,8 +224,9 @@ class TANBCPT(object):
          - p: a scalar, the conditional probability P(A_i | Pa(A_i))
 
         '''
-        raise NotImplementedError()
-        p = None
+        p = self.cpt[entry[self.idx], c, entry[self.pa_idx]
+                     ] if self.pa_idx != None else self.cpt[entry[self.idx], c]
+
         return p
 
 
@@ -232,7 +246,16 @@ class TANBClassifier(NBClassifier):
             the class labels of the rows in A
 
         '''
-        raise NotImplementedError()
+        self.P_c = {key: None for key in {0, 1}}
+        self.cpts = [None for i in range(np.size(A_train, 1))]
+        # build mst, store root and edges
+        mst = get_mst(A_train, C_train)
+        self.root = get_tree_root(mst)
+        self.cpts[self.root] = TANBCPT(self.root, None)
+        for parent, child in get_tree_edges(mst, self.root):
+            self.cpts[child] = TANBCPT(child, parent)
+
+        self._train(A_train, C_train)
 
     def _train(self, A_train, C_train):
         '''
@@ -252,7 +275,7 @@ class TANBClassifier(NBClassifier):
          - None
 
         '''
-        raise NotImplementedError()
+        return super()._train(A_train, C_train)
 
     def classify(self, entry):
         '''
@@ -271,7 +294,7 @@ class TANBClassifier(NBClassifier):
         be removed. 
 
         '''
-        raise NotImplementedError()
+        return super().classify(entry)
 
 
 # =========================================================================
@@ -309,6 +332,16 @@ def evaluate(classifier_cls, train_subset=False):
             results.append((c_pred == c))
             pp.append(_)
         return results
+
+    # # inspect tree.py
+    # mst = get_mst(A, C)
+    # root = get_tree_root(mst)
+    # print("root: ", root)
+    # count = 0
+    # for edge in get_tree_edges(mst, root):
+    #     count += 1
+    #     print(edge)
+    # print("# of edges: ", count)
 
     # partition train and test set for 10 rounds
     M, N = A.shape
@@ -378,11 +411,11 @@ def main():
     print('  10-fold cross validation total test accuracy {:2.4f} on {} examples'.format(
         accuracy, num_examples))
 
-    # # Part (b)
-    # print('TANB Classifier')
-    # accuracy, num_examples = evaluate(TANBClassifier, train_subset=False)
-    # print('  10-fold cross validation total test accuracy {:2.4f} on {} examples'.format(
-    #     accuracy, num_examples))
+    # Part (b)
+    print('TANB Classifier')
+    accuracy, num_examples = evaluate(TANBClassifier, train_subset=False)
+    print('  10-fold cross validation total test accuracy {:2.4f} on {} examples'.format(
+        accuracy, num_examples))
 
     # # Part (c)
     # print('Naive Bayes Classifier on missing data')
