@@ -14,6 +14,9 @@ from data_helper import load_vote_data, load_incomplete_entry
 # helpers to learn and traverse the tree over attributes
 from tree import get_mst, get_tree_root, get_tree_edges
 
+# for marginalizing out multiple variables at once
+from itertools import product
+
 # pseudocounts for uniform dirichlet prior (Laplace smoothing)
 alpha = 0.1
 
@@ -134,18 +137,54 @@ class NBClassifier(object):
          - logP_c_pred: the log of the conditional probability of the label |c_pred|
 
         '''
-        num_p_1 = self.P_c[1]
-        num_p_0 = self.P_c[0]
-        for i in range(entry.size):
-            num_p_1 *= self.cpts[i].get_cond_prob(entry, 1)
-            num_p_0 *= self.cpts[i].get_cond_prob(entry, 0)
 
-        if num_p_1 > num_p_0:
+        # find missing attributes
+        miss = np.where(entry == -1)[0]
+        fill = np.where(entry != -1)[0]
+        p_x_1_fill = np.prod(
+            [self.cpts[x].get_cond_prob(entry, 1) for x in fill])
+        p_x_0_fill = np.prod(
+            [self.cpts[x].get_cond_prob(entry, 0) for x in fill])
+
+        # marginalize joint distribution over all missing attributes
+        p_c_1_x = []
+        p_c_0_x = []
+        if miss.size == 0:
+            p_c_1_x.append(self.P_c[1] * p_x_1_fill)
+            p_c_0_x.append(self.P_c[0] * p_x_0_fill)
+        else:
+            for value in product(range(2), repeat=len(miss)):
+                miss_x_dict = {miss[i]: value[i] for i in range(len(miss))}
+                p_c_1_x.append(
+                    self.P_c[1] * p_x_1_fill * np.prod([self.cpts[k].get_cond_prob(entry, v) for k, v in miss_x_dict.items()]))
+                p_c_0_x.append(
+                    self.P_c[0] * p_x_0_fill * np.prod([self.cpts[k].get_cond_prob(entry, v) for k, v in miss_x_dict.items()]))
+        log_num_p_c_1 = logsumexp(np.log(p_c_1_x))
+        log_num_p_c_0 = logsumexp(np.log(p_c_0_x))
+
+        if log_num_p_c_1 > log_num_p_c_0:
             c_pred = 1
-            logP_c_pred = np.log(num_p_1 / (num_p_1 + num_p_0))
+            logP_c_pred = log_num_p_c_1 - \
+                np.log(np.exp(log_num_p_c_0) + np.exp(log_num_p_c_1))
         else:
             c_pred = 0
-            logP_c_pred = np.log(num_p_0 / (num_p_1 + num_p_0))
+            logP_c_pred = log_num_p_c_0 - \
+                np.log(np.exp(log_num_p_c_0) + np.exp(log_num_p_c_1))
+
+        # Below is the first version which doesn't consider missing attributes
+
+        # num_p_1 = self.P_c[1]
+        # num_p_0 = self.P_c[0]
+        # for i in range(entry.size):
+        #     num_p_1 *= self.cpts[i].get_cond_prob(entry, 1)
+        #     num_p_0 *= self.cpts[i].get_cond_prob(entry, 0)
+
+        # if num_p_1 > num_p_0:
+        #     c_pred = 1
+        #     logP_c_pred = np.log(num_p_1 / (num_p_1 + num_p_0))
+        # else:
+        #     c_pred = 0
+        #     logP_c_pred = np.log(num_p_0 / (num_p_1 + num_p_0))
 
         return (c_pred, logP_c_pred)
 
@@ -325,16 +364,6 @@ def evaluate(classifier_cls, train_subset=False):
             pp.append(_)
         return results
 
-    # # inspect tree.py
-    # mst = get_mst(A, C)
-    # root = get_tree_root(mst)
-    # print("root: ", root)
-    # count = 0
-    # for edge in get_tree_edges(mst, root):
-    #     count += 1
-    #     print(edge)
-    # print("# of edges: ", count)
-
     # partition train and test set for 10 rounds
     M, N = A.shape
     tot_correct = 0
@@ -378,7 +407,6 @@ def evaluate_incomplete_entry(classifier_cls):
 
     # train a TANB classifier on the full dataset
     classifier = classifier_cls(A_base, C_base)
-
     # load incomplete entry 1
     entry = load_incomplete_entry()
 
@@ -387,8 +415,12 @@ def evaluate_incomplete_entry(classifier_cls):
     print('  P(C={}|A_observed) = {:2.4f}'.format(c_pred, P_c_pred))
 
     # TODO: write code to compute this!
-    PA_12_eq_1 = None
-
+    if classifier_cls.__name__ == 'NBClassifier':
+        PA_12_eq_1 = P_c_pred * classifier.cpts[11].cpt[1, c_pred] + (
+            1 - P_c_pred) * classifier.cpts[11].cpt[1, 1-c_pred]
+    else:
+        PA_12_eq_1 = P_c_pred * classifier.cpts[11].cpt[1, c_pred, entry[classifier.root]] + (
+            1 - P_c_pred) * classifier.cpts[11].cpt[1, 1-c_pred, entry[classifier.root]]
     return P_c_pred, PA_12_eq_1
 
 
@@ -409,23 +441,23 @@ def main():
     print('  10-fold cross validation total test accuracy {:2.4f} on {} examples'.format(
         accuracy, num_examples))
 
-    # # Part (c)
-    # print('Naive Bayes Classifier on missing data')
-    # evaluate_incomplete_entry(NBClassifier)
+    # Part(c)
+    print('Naive Bayes Classifier on missing data')
+    evaluate_incomplete_entry(NBClassifier)
 
-    # print('TANB Classifier on missing data')
-    # evaluate_incomplete_entry(TANBClassifier)
+    print('TANB Classifier on missing data')
+    evaluate_incomplete_entry(TANBClassifier)
 
-    # # Part (d)
-    # print('Naive Bayes')
-    # accuracy, num_examples = evaluate(NBClassifier, train_subset=True)
-    # print('  10-fold cross validation total test accuracy {:2.4f} on {} examples'.format(
-    #     accuracy, num_examples))
+    # Part (d)
+    print('Naive Bayes')
+    accuracy, num_examples = evaluate(NBClassifier, train_subset=True)
+    print('  10-fold cross validation total test accuracy {:2.4f} on {} examples'.format(
+        accuracy, num_examples))
 
-    # print('TANB Classifier')
-    # accuracy, num_examples = evaluate(TANBClassifier, train_subset=True)
-    # print('  10-fold cross validation total test accuracy {:2.4f} on {} examples'.format(
-    #     accuracy, num_examples))
+    print('TANB Classifier')
+    accuracy, num_examples = evaluate(TANBClassifier, train_subset=True)
+    print('  10-fold cross validation total test accuracy {:2.4f} on {} examples'.format(
+        accuracy, num_examples))
 
 
 if __name__ == '__main__':
